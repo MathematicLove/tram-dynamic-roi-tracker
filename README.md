@@ -1,10 +1,18 @@
-Weights available in HuggingFace: [here](https://huggingface.co/ayzeksalimli/tram-dynamic-roi-tracker-yolo11s).
-
 # Algorithm for detecting foreign objects on tram tracks (dRoI) based on segmentation
 
+Weights available in HuggingFace: [here](https://huggingface.co/ayzeksalimli/tram-dynamic-roi-tracker-yolo11s).
+
+--------------------
+
 ## Example:
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: flex-start;">
+    <img src="examples/EXAMPLE_TRACKING.jpg" width="380" height="600" alt="Tracking Example" style="border-radius: 8px; object-fit: cover;">
+    <img src="examples/EXAMPLE_TRACKING.png" width="380" height="216" alt="Tracking Example 2" style="border-radius: 8px; object-fit: cover;">
+    <img src="examples/EXAMPLE_1.png" width="380" height="600" alt="Day Example 1" style="border-radius: 8px; object-fit: cover;">
+    <img src="examples/EXAMPLE_NIGHT.png" width="380" height="216" alt="Night Example" style="border-radius: 8px; object-fit: cover;">
+</div>
 
-
+--------------------
 
 **Graduation Thesis (FQW/ВКР):** Algorithm for detecting foreign objects on tram tracks based on their segmentation.
 
