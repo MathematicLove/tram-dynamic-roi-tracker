@@ -32,6 +32,18 @@ The developed algorithm is available at: [https://github.com/MathematicLove/tram
 
 ---
 
+## Launcher UI
+
+`ui/app.py` is a minimal desktop launcher: pick **Camera Mode** (live camera) or **Video Mode** (drop/select a video file), set the tram speed, and it runs `algorithm/detection.py` for you. Also you can test it on **Image Mode** (drop/select a image file).
+
+```bash
+python ui/app.py
+```
+
+Drag-and-drop in Video Mode requires the optional `tkinterdnd2` package (`pip install tkinterdnd2`); without it, use the "Обзор…" file picker button instead.
+
+---
+
 ## Available Models (Pickle)
 
 | Model                  | Type           | Repository |

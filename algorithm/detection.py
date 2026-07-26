@@ -583,9 +583,12 @@ def main() -> None:
     else:
         det_class_ids = _det_class_ids(det_model, args.det_classes)
 
-    cap = cv2.VideoCapture(args.video)
+    video_source = args.video
+    if isinstance(video_source, str) and video_source.strip().lstrip("-").isdigit():
+        video_source = int(video_source)
+    cap = cv2.VideoCapture(video_source)
     if not cap.isOpened():
-        raise OSError(f"Failed to open video: {args.video}")
+        raise OSError(f"Failed to open video source: {video_source}")
 
     fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
