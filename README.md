@@ -46,3 +46,4 @@ The developed algorithm is available at: [https://github.com/MathematicLove/tram
 
 ---
 
+by Salimli Ayzek (Салимли Айзек): https://mathematiclove.github.io
