@@ -4,3 +4,4 @@ torchvision==0.19.1
 opencv-python==4.10.0.84
 ultralytics==8.4.19
 huggingface_hub>=0.24,<2
+tkinterdnd2==0.4.2

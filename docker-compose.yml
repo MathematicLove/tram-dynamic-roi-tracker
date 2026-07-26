@@ -10,5 +10,7 @@ services:
       - ./models:/app/models
       - ./results:/app/results
       - ./videos:/app/videos:ro
-    command: ["python", "algorithm/detection.py", "--speed", "40", "--video", "/app/videos/input.mp4"]
+    # devices:
+    #   - /dev/video0:/dev/video0   # uncomment on Linux hosts to pass the camera through for Camera Mode
+    command: ["python", "ui/app.py"]
     network_mode: host

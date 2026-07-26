@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-6 \
     libxkbcommon0 \
     libgtk-3-0 \
+    tk \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -26,8 +27,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY scripts/ scripts/
 COPY algorithm/ algorithm/
+COPY ui/ ui/
 
 RUN mkdir -p models results
 
 ENTRYPOINT ["scripts/entrypoint.sh"]
-CMD ["python", "algorithm/detection.py", "--speed", "40"]
+CMD ["python", "ui/app.py"]
