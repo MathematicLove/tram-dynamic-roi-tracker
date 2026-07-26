@@ -1,0 +1,14 @@
+services:
+  tram-dynamic-roi-tracker:
+    image: ${DOCKERHUB_IMAGE:-tram-dynamic-roi-tracker:latest}
+    build:
+      context: .
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./models:/app/models
+      - ./results:/app/results
+      - ./videos:/app/videos:ro
+    command: ["python", "algorithm/detection.py", "--speed", "40", "--video", "/app/videos/input.mp4"]
+    network_mode: host

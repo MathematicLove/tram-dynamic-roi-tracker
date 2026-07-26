@@ -11,16 +11,21 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple, Any, List
 
 from ultralytics import YOLO
-import final_roi_3 as roi
+import roi
 
 _DIR = Path(__file__).resolve().parent
-DET_MODEL_PATH = "yolov8n.pt"
+_ROOT = _DIR.parent
+MODELS_DIR = _ROOT / "models"
+RESULTS_DIR = _ROOT / "results"
+
+DET_MODEL_PATH = MODELS_DIR / "detector" / "yolov8s.pt"
 DET_CONF = 0.35
 DET_CLASSES_DEFAULT = ""
 # Outside yellow polygon: 1× gauge width on each side (not drawn)
 _ROI_BUFFER_GAUGE_FRAC = 5.5
-OUTPUT_PATH = str(_DIR / "all_detection.mp4")
-ORANGE_RED_SHOTS_DIR = _DIR / "orange_red_crossings"
+OUTPUT_PATH = str(RESULTS_DIR / "videos" / "all_detection.mp4")
+ORANGE_RED_SHOTS_DIR = RESULTS_DIR / "crossings"
+DEFAULT_TRACKER_PATH = MODELS_DIR / "trackers" / "bytetrack.yaml"
 
 _RU_ALERT_YELLOW = "Сигналь (предупреждение)"
 _RU_ALERT_ORANGE = "Снизь скорость и сигналь"
@@ -37,20 +42,16 @@ _NEUTRAL_COLOR = (180, 180, 180)
 _ALERT_HOLD_SEC = 1.0
 _TRACK_GRID_PX = 80
 
-# --- трекинг траекторий и предупреждение WATCH THE OBJECT ---
-HISTORY = 5          # окно кадров для оценки тренда движения
-MIN_MOVE_PX = 1.5    # мин. горизонтальное смещение, чтобы считать движение
-DIST_EPS_PX = 1.0    # насколько должно упасть расстояние до ROI, чтобы «сокращается»
-TRACK_TTL = 30       # через сколько кадров без объекта забыть его историю
-TRAIL_LEN = 30       # длина рисуемого следа (в кадрах)
+HISTORY = 5
+MIN_MOVE_PX = 1.5
+DIST_EPS_PX = 1.0
+TRACK_TTL = 30
+TRAIL_LEN = 30
 _TRAIL_COLOR = (0, 255, 0)
 _TRAIL_WATCH_COLOR = (0, 0, 255)
 
-# --- компенсация движения камеры (ego-motion) ---
-# Нетто-смещение рамки за окно HISTORY ПОСЛЕ вычета глобального движения камеры.
-# Больше порога => объект реально движется; меньше => «плывёт» из-за камеры.
 MIN_REAL_MOVE_PX = 6.0
-EGO_MIN_FEATURES = 12     # мин. число фоновых точек для надёжной оценки
+EGO_MIN_FEATURES = 12
 EGO_MAX_CORNERS = 600
 
 _TRAIN_CLASS_NAME = "train"
@@ -84,7 +85,6 @@ _HAZARD_NAME_SUBSTR_EXTRA: Tuple[str, ...] = (
     "dumpster",
 )
 
-# --- классы, для которых ведём трекинг: транспорт + люди + животные ---
 _TRACK_PERSON_NAMES = {"person"}
 _TRACK_VEHICLE_NAMES = {
     "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
@@ -99,10 +99,8 @@ _TRACK_BASE_NAMES: frozenset[str] = frozenset(
 )
 _TRACK_NAME_SUBSTR: Tuple[str, ...] = ("bike", "scooter", "skate")
 
-
 def _norm_det_name(model: YOLO, cls_id: int) -> str:
     return str(model.names.get(cls_id, f"class_{cls_id}")).strip().lower()
-
 
 def _build_track_class_names(model: YOLO) -> frozenset[str]:
     """Transport (incl. ridables), people and animals — the trackable set."""
@@ -113,7 +111,6 @@ def _build_track_class_names(model: YOLO) -> frozenset[str]:
             extra.add(lv)
     return frozenset(_TRACK_BASE_NAMES | extra)
 
-
 def _build_hazard_class_names(model: YOLO) -> frozenset[str]:
     extra: set[str] = set()
     for v in model.names.values():
@@ -123,7 +120,6 @@ def _build_hazard_class_names(model: YOLO) -> frozenset[str]:
         if any(s in lv for s in _HAZARD_NAME_SUBSTR_EXTRA):
             extra.add(lv)
     return frozenset(_HAZARD_BASE_NAMES | extra)
-
 
 def _det_class_ids(model: YOLO, names_csv: str) -> list[int]:
     want = {s.strip().lower() for s in names_csv.split(",") if s.strip()}
@@ -167,7 +163,6 @@ class _AlertTracker:
         for k in list(self._timers):
             if k not in seen:
                 del self._timers[k]
-
 
 class _CrossingTracker:
     def __init__(self, fps: int) -> None:
@@ -240,7 +235,6 @@ def classify_zone(
             return name
     return None
 
-
 def _outer_bounds(
     zones: dict, ls: np.ndarray, rs: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -248,7 +242,6 @@ def _outer_bounds(
         if name in zones:
             return zones[name]
     return ls, rs
-
 
 def _roi_band_at_y(
     y: int, ys: np.ndarray, L_arr: np.ndarray, R_arr: np.ndarray
@@ -261,14 +254,12 @@ def _roi_band_at_y(
         L, R = R, L
     return L, R
 
-
 def _horiz_gap(x1: int, x2: int, L: float, R: float) -> float:
     if x2 < L:
         return L - x2
     if x1 > R:
         return x1 - R
     return 0.0
-
 
 def _sign(v: float) -> int:
     if v > 0:
@@ -277,30 +268,16 @@ def _sign(v: float) -> int:
         return -1
     return 0
 
-
 def _warp_affine_pt(
     M: Optional[np.ndarray], x: float, y: float
 ) -> Tuple[float, float]:
-    """Куда уехала бы точка (x, y) при движении камеры (M: prev->cur).
-
-    M is None => считаем камеру неподвижной (тождество).
-    """
     if M is None:
         return float(x), float(y)
     nx = float(M[0, 0] * x + M[0, 1] * y + M[0, 2])
     ny = float(M[1, 0] * x + M[1, 1] * y + M[1, 2])
     return nx, ny
 
-
 class _EgoMotion:
-    """Глобальная модель движения камеры между соседними кадрами.
-
-    По фоновым точкам (вне рамок объектов) оцениваем аффинное преобразование
-    prev->cur (сдвиг + поворот + масштаб) методом RANSAC. Масштаб критичен:
-    при движении камеры вперёд статичные объекты «расплываются» от центра
-    кадра — это ловится коэффициентом масштаба, а не только сдвигом.
-    """
-
     _QUALITY = 0.01
     _MIN_DIST = 8
     _BOX_MARGIN = 12
@@ -362,7 +339,6 @@ class _EgoMotion:
             return None
         return M
 
-
 def _bbox_spans_red_and_orange(
     x1: int,
     y1: int,
@@ -410,7 +386,6 @@ def _expanded_interest_band(
     er = np.clip(yr.astype(np.int32) + buf_px, 0, w - 1)
     return el, er
 
-
 def _expanded_band_poly(
     ys: np.ndarray,
     exp_l: np.ndarray,
@@ -419,7 +394,6 @@ def _expanded_band_poly(
     lp = np.column_stack([exp_l, ys])
     rp = np.column_stack([exp_r, ys])
     return np.vstack([lp, rp[::-1]]).astype(np.int32)
-
 
 def _mask_frame_for_roi_det(
     frame: np.ndarray,
@@ -434,7 +408,6 @@ def _mask_frame_for_roi_det(
     out = np.zeros_like(frame)
     out[mask > 0] = frame[mask > 0]
     return out
-
 
 def _bbox_in_expanded_roi(
     x1: int,
@@ -460,7 +433,6 @@ def _bbox_in_expanded_roi(
             return True
     return False
 
-
 def alert_distance_in_band(speed_kmh: int, distance_m: Optional[float]) -> bool:
     if distance_m is None:
         return False
@@ -471,7 +443,6 @@ def alert_distance_in_band(speed_kmh: int, distance_m: Optional[float]) -> bool:
     if v < 44:
         return 2.0 <= d <= 10.0
     return d >= 10.0
-
 
 def compute_alert(
     zone: Optional[str],
@@ -509,7 +480,6 @@ def compute_alert(
         return (console, ru)
     return None
 
-
 def _write_danger_log_line(
     danger_f,
     ts_iso: str,
@@ -527,11 +497,9 @@ def _write_danger_log_line(
     )
     danger_f.flush()
 
-
 _LT = cv2.LINE_8
 _FONT = cv2.FONT_HERSHEY_PLAIN
 _FONT_SCALE = 1
-
 
 def _draw_detection(
     frame: np.ndarray,
@@ -589,13 +557,24 @@ def main() -> None:
     )
     ap.add_argument("--hold-sec", type=float, default=_ALERT_HOLD_SEC)
     ap.add_argument("--fov", type=float, default=roi.DEFAULT_FOV_DEG)
-    ap.add_argument("--tracker", type=str, default="bytetrack.yaml")
+    ap.add_argument(
+        "--tracker",
+        type=str,
+        default=str(DEFAULT_TRACKER_PATH) if DEFAULT_TRACKER_PATH.exists() else "bytetrack.yaml",
+    )
     args = ap.parse_args()
 
     speed = max(1, min(75, args.speed))
 
     seg_model = roi.load_model(args.seg_model)
-    det_model = YOLO(args.det_model)
+    det_model_path = Path(args.det_model)
+    if not det_model_path.exists() and args.det_model == str(DET_MODEL_PATH):
+        print(
+            f"[ERROR] Модель детектора не найдена: {det_model_path}\n"
+            "Запустите: python scripts/download_models.py"
+        )
+        sys.exit(1)
+    det_model = YOLO(str(det_model_path))
     hazard_class_names = _build_hazard_class_names(det_model)
     track_class_names = _build_track_class_names(det_model)
     _dc = (args.det_classes or "").strip().lower()
@@ -614,11 +593,14 @@ def main() -> None:
 
     hold_frames = max(1, int(fps * args.hold_sec))
     _log_date = datetime.now().strftime("%d_%m_%Y")
-    log_path = _DIR / f"detection_log_{_log_date}.txt"
-    danger_log_path = _DIR / f"DANGER_LOG_{_log_date}.txt"
+    logs_dir = RESULTS_DIR / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / f"detection_log_{_log_date}.txt"
+    danger_log_path = logs_dir / f"DANGER_LOG_{_log_date}.txt"
 
     writer = None
     if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         writer = cv2.VideoWriter(
             args.output, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H),
         )
@@ -634,7 +616,6 @@ def main() -> None:
     traj_hist: Dict[int, deque] = {}
     trail_pts: Dict[int, deque] = {}
     track_last_seen: Dict[int, int] = {}
-    # ego-motion: оценщик движения камеры + пер-трековые компенсированные смещения
     ego = _EgoMotion()
     prev_obj_boxes: List[Tuple[int, int, int, int]] = []
     track_prev_pos: Dict[int, Tuple[int, int]] = {}
@@ -741,18 +722,12 @@ def main() -> None:
                     obj_name = det_model.names.get(cls_id, f"class_{cls_id}")
                     cx = (x1 + x2) // 2
                     cy_foot = int(y2)
-                    # все рамки маскируем при оценке ego-motion следующего кадра
                     cur_obj_boxes.append((int(x1), int(y1), int(x2), int(y2)))
 
                     cls_name_l = _norm_det_name(det_model, cls_id)
-                    # Трекинг (ID + траектория + след) только для транспорта,
-                    # людей и животных. Остальное — без трекинга.
                     is_trackable = cls_name_l in track_class_names
                     eff_tid = int(tid) if (is_trackable and tid >= 0) else -1
 
-                    # --- ego-motion: реальное движение объекта vs «плывущая» рамка ---
-                    # Предсказываем, куда уехала бы рамка, будь объект статичным
-                    # (только из-за камеры). Остаток = собственное движение объекта.
                     really_moving = False
                     net_dx = 0.0
                     if eff_tid >= 0:
@@ -768,7 +743,6 @@ def main() -> None:
                         rb = track_resid.setdefault(eff_tid, deque(maxlen=HISTORY))
                         rb.append((rdx, rdy))
                         track_prev_pos[eff_tid] = (cx, cy_foot)
-                        # нетто-смещение за окно (джиттер взаимно гасится)
                         net_dx = float(sum(d[0] for d in rb))
                         net_dy = float(sum(d[1] for d in rb))
                         really_moving = (
@@ -776,7 +750,6 @@ def main() -> None:
                             >= MIN_REAL_MOVE_PX
                         )
 
-                    # --- траектория к ROI: ТОЛЬКО если объект реально движется ---
                     going = False
                     if really_moving and has_roi and outer_l is not None and eff_tid >= 0:
                         L, R = _roi_band_at_y(cy_foot, ys, outer_l, outer_r)
@@ -785,9 +758,7 @@ def main() -> None:
                         hist = traj_hist.setdefault(eff_tid, deque(maxlen=HISTORY))
                         if len(hist) >= 1:
                             ref_cx, ref_cy, ref_dist, ref_roi_cx = hist[0]
-                            # направление «к ROI» — по геометрии текущего кадра
                             h_dir = _sign(ref_roi_cx - ref_cx)
-                            # движение берём КОМПЕНСИРОВАННОЕ (без сдвига камеры)
                             if h_dir == 0:
                                 moving_toward = True
                             else:
@@ -802,8 +773,6 @@ def main() -> None:
                     if eff_tid >= 0:
                         track_last_seen[eff_tid] = n
                         seen_ids.add(eff_tid)
-                        # след движения рисуем только для реально движущихся объектов;
-                        # для статичных (дрейф камеры) трекинг-след игнорируем
                         if really_moving:
                             trail_pts.setdefault(
                                 eff_tid, deque(maxlen=TRAIL_LEN)
@@ -971,7 +940,6 @@ def main() -> None:
 
             tracker.end_frame(seen_keys)
 
-            # визуализация следов трекинга (красный = идёт к ROI)
             for tid in seen_ids:
                 pts = trail_pts.get(tid)
                 if not pts or len(pts) < 2:
@@ -982,7 +950,6 @@ def main() -> None:
                 px, py = pts[-1]
                 cv2.circle(frame, (int(px), int(py)), 3, tc, -1)
 
-            # забываем старые треки
             for tid in list(track_last_seen.keys()):
                 if n - track_last_seen[tid] > TRACK_TTL:
                     track_last_seen.pop(tid, None)
@@ -991,7 +958,6 @@ def main() -> None:
                     track_prev_pos.pop(tid, None)
                     track_resid.pop(tid, None)
 
-            # рамки этого кадра -> маска фона для ego-motion следующего кадра
             prev_obj_boxes = cur_obj_boxes
 
             cv2.imshow("All detection + zones", frame)

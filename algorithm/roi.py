@@ -29,14 +29,27 @@ torch.load = _patched_load
 
 _DIR = Path(__file__).resolve().parent
 _ROOT = _DIR.parent
-MODEL_PATH = _ROOT / "/Users/monadayzek/Desktop/Ayzek/1-spbstu/diploma/objects-recognation/yolo/best_fold_3.pt"
+MODELS_DIR = _ROOT / "models"
+RESULTS_DIR = _ROOT / "results"
+
+MODEL_PATH = MODELS_DIR / "segmentor" / "tram-dynamic-roi-tracker-yolo11s.pt"
 VIDEO_PATH = str(_ROOT / "/Users/monadayzek/Desktop/Ayzek/1-spbstu/diploma/objects-recognation/yolo/a.mp4")
-OUTPUT_PATH = str(_DIR / "roi_zones_stable___3.mp4")
+OUTPUT_PATH = str(RESULTS_DIR / "videos" / "roi_zones_stable___3.mp4")
 
 CONF = 0.325
-DEVICE = "mps"
 
-LOW_CONF_DIR = _DIR / "low-conf-data"
+
+def _detect_device() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+DEVICE = os.environ.get("TRAM_DEVICE") or _detect_device()
+
+LOW_CONF_DIR = RESULTS_DIR / "low-conf"
 LOW_CONF_NORM = 0.5
 
 RAIL_CLS = {0, 1, 3, 4}
@@ -86,7 +99,10 @@ _FIT_TRIM_SIGMA = 2.0
 def load_model(path: Optional[Path] = None) -> YOLO:
     p = Path(path) if path else MODEL_PATH
     if not p.exists():
-        print(f"[ERROR] Модель не найдена: {p}")
+        print(
+            f"[ERROR] Модель не найдена: {p}\n"
+            "Запустите: python scripts/download_models.py"
+        )
         sys.exit(1)
     return YOLO(str(p))
 
@@ -287,26 +303,6 @@ def zone_bounds(
         )
     return out
 
-
-# ─────────────────────────────────────────────────────────────────────────
-#  ADAPTIVE, GEOMETRY-EXACT DISTANCE MODEL
-#
-#  For a planar track under a pinhole camera the projected rail pixel-width is
-#  EXACTLY linear in the image row:   w(y) = a·(y − y_vp),  with y_vp the row of
-#  the vanishing point (where the rails meet, w → 0). Combined with the known
-#  gauge G and focal length f, the ground distance is a smooth, monotonic,
-#  closed-form function of the row:
-#
-#       Z(y) = f·G / w(y) = (f·G / a) / (y − y_vp) = C / (y − y_vp)
-#       y(Z) = y_vp + C / Z          (exact inverse → exact grid rows)
-#
-#  We recover (a, y_vp) per frame with a robust (outlier-trimmed) line fit, so
-#  the model self-calibrates to the current geometry, denoises the per-row
-#  width noise (which explodes far away), and works on straights and gentle
-#  curves alike. A width-table fallback keeps it working when the fit is weak.
-# ─────────────────────────────────────────────────────────────────────────
-
-
 def _fit_width_line(
     ys: np.ndarray, ls: np.ndarray, rs: np.ndarray
 ) -> Optional[Tuple[float, float]]:
@@ -335,7 +331,6 @@ def _fit_width_line(
     if a <= 1e-6:
         return None
     return float(a), float(b)
-
 
 class _DistanceModel:
     """Closed-form row<->metric-distance mapping from the fitted width line."""
@@ -368,7 +363,6 @@ def build_distance_model(
     a, b = fit
     return _DistanceModel(a, b, f_px)
 
-
 def estimate_distance_m(
     y_px: int,
     ys: np.ndarray,
@@ -397,7 +391,6 @@ def estimate_distance_m(
     d_bot = f_px * GAUGE_MM / float(widths[int(np.argmax(ys))])
     return max(0.0, (d_obj - d_bot) / 1000.0)
 
-
 def _grid_positions_fallback(
     ys: np.ndarray, ls: np.ndarray, rs: np.ndarray, f_px: float
 ) -> list:
@@ -413,7 +406,6 @@ def _grid_positions_fallback(
         best = above[int(np.argmin(np.abs(d_mm[above] - target)))]
         marks.append((int(ys[best]), i * GRID_STEP_MM / 1000.0))
     return marks
-
 
 def grid_positions(
     ys: np.ndarray,
@@ -447,11 +439,9 @@ def grid_positions(
         marks.append((int(round(yy)), i * GRID_STEP_MM / 1000.0))
     return marks
 
-
 def _outline_pts(ys: np.ndarray, xs: np.ndarray) -> np.ndarray:
     """Single boundary polyline (one side) for crisp anti-aliased outlines."""
     return np.column_stack([xs, ys]).astype(np.int32).reshape(-1, 1, 2)
-
 
 def _put_label(frame: np.ndarray, text: str, org: Tuple[int, int]) -> None:
     """Distance label with a dark outline so it stays readable on any zone."""
@@ -460,7 +450,6 @@ def _put_label(frame: np.ndarray, text: str, org: Tuple[int, int]) -> None:
                (0, 0, 0), 3, cv2.LINE_AA)
     cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_PLAIN, 1,
                TEXT_COLOR, 1, cv2.LINE_AA)
-
 
 def draw_zones(
     frame: np.ndarray,
@@ -505,7 +494,6 @@ def draw_zones(
             cv2.line(frame, (x1, gy), (x2, gy), GRID_COLOR, 1, cv2.LINE_AA)
             _put_label(frame, f"{dist_m:.0f} m", (x2 + 5, gy + 4))
 
-
 def draw_legend(frame: np.ndarray) -> None:
     h = frame.shape[0]
     lx, ly = 10, h - 90
@@ -531,7 +519,6 @@ def draw_legend(frame: np.ndarray) -> None:
             lt,
         )
 
-
 def find_groups(mask: np.ndarray, min_area: int = 300) -> list:
     n, labels = cv2.connectedComponents(mask)
     groups = []
@@ -542,12 +529,10 @@ def find_groups(mask: np.ndarray, min_area: int = 300) -> list:
         groups.append(comp)
     return groups if groups else [mask]
 
-
 def _branch_sort_key(branch: int):
     if branch == 0:
         return lambda c: (-c[1], -c[2])
     return lambda c: (c[1], -c[2])
-
 
 def _select_rail_group(
     groups: list, h: int, prev_center: Optional[float] = None
@@ -571,7 +556,6 @@ def _select_rail_group(
 
     candidates.sort(key=_branch_sort_key(RAIL_BRANCH))
     return candidates[0][0]
-
 
 class _TemporalState:
     EMA_ALPHA = 0.30
@@ -669,9 +653,7 @@ class _TemporalState:
         self._area = self._area_of(self._ls, self._rs)
         return self._ys.copy(), self._ls.copy(), self._rs.copy()
 
-
 _temporal = _TemporalState()
-
 
 def process_frame(frame: np.ndarray, model: YOLO) -> np.ndarray:
     h, w = frame.shape[:2]
@@ -699,10 +681,8 @@ def process_frame(frame: np.ndarray, model: YOLO) -> np.ndarray:
     draw_zones(frame, ys, zones, ls, rs, grid)
     return frame
 
-
 def reset_temporal_state() -> None:
     _temporal.reset()
-
 
 def main() -> None:
     global USE_MORPH
@@ -730,6 +710,7 @@ def main() -> None:
 
     out = None
     if OUTPUT_PATH:
+        Path(OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
         out = cv2.VideoWriter(
             OUTPUT_PATH, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H)
         )
@@ -753,7 +734,6 @@ def main() -> None:
         out.release()
     cv2.destroyAllWindows()
     print(f"Done - {n} frames processed.")
-
 
 if __name__ == "__main__":
     main()
