@@ -44,6 +44,17 @@ Drag-and-drop in Video Mode requires the optional `tkinterdnd2` package (`pip in
 
 ---
 
+## Tests
+
+Unit tests cover the geometry helpers in `algorithm/roi.py` and use synthetic data only (no weights, video or camera needed).
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests
+```
+
+---
+
 ## Available Models (Pickle)
 
 | Model                  | Type           | Repository |
