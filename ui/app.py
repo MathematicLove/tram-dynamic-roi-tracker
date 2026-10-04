@@ -24,6 +24,8 @@ from tkinter import (
 )
 from tkinter.scrolledtext import ScrolledText
 
+from validation import check_input_file, parse_camera_index, parse_speed
+
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
 
@@ -228,46 +230,49 @@ class App:
         self.log.configure(state=DISABLED)
 
     def _start(self) -> None:
-        if self.mode == "image":
-            if not self.input_path:
-                messagebox.showerror("Error", "Select an image file")
-                return
-            cmd = [
-                sys.executable, str(IMAGE_SCRIPT),
-                "--image", self.input_path,
-                "--show",
-            ]
-        else:
-            try:
-                speed = str(int(self.speed_var.get()))
-            except ValueError:
-                messagebox.showerror("Error", "Speed must be a number")
-                return
+        if self.proc and self.proc.poll() is None:
+            messagebox.showinfo("Already running", "Stop the current run first")
+            return
 
-            if self.mode == "camera":
-                video_arg = self.camera_index_var.get().strip() or "0"
+        try:
+            if self.mode == "image":
+                image = check_input_file(self.input_path, "an image file")
+                cmd = [
+                    sys.executable, str(IMAGE_SCRIPT),
+                    "--image", image,
+                    "--show",
+                ]
             else:
-                if not self.input_path:
-                    messagebox.showerror("Error", "Select a video file")
-                    return
-                video_arg = self.input_path
+                speed = str(parse_speed(self.speed_var.get()))
+                if self.mode == "camera":
+                    video_arg = parse_camera_index(self.camera_index_var.get())
+                else:
+                    video_arg = check_input_file(self.input_path, "a video file")
 
-            cmd = [
-                sys.executable, str(DETECTION_SCRIPT),
-                "--speed", speed,
-                "--video", video_arg,
-            ]
+                cmd = [
+                    sys.executable, str(DETECTION_SCRIPT),
+                    "--speed", speed,
+                    "--video", video_arg,
+                ]
+        except ValueError as exc:
+            messagebox.showerror("Error", str(exc))
+            return
 
         self._append_log(f"$ {' '.join(cmd)}\n")
         self.stop_btn.configure(state=NORMAL)
 
         def run() -> None:
             env = dict(os.environ, PYTHONUNBUFFERED="1")
-            self.proc = subprocess.Popen(
-                cmd, cwd=str(_ROOT), env=env,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1,
-            )
+            try:
+                self.proc = subprocess.Popen(
+                    cmd, cwd=str(_ROOT), env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1,
+                )
+            except OSError as exc:
+                self.root.after(0, self._append_log, f"Failed to start: {exc}\n")
+                self.root.after(0, self._on_finished)
+                return
             assert self.proc.stdout is not None
             for line in self.proc.stdout:
                 self.root.after(0, self._append_log, line)
