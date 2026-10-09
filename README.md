@@ -27,7 +27,7 @@ The developed algorithm is available at: [https://github.com/MathematicLove/tram
 
 ### Useful Links
 - **Research paper (article)**: [https://elibrary.ru/qfcwed](https://elibrary.ru/qfcwed)
-- **Diploma for 1st degree laureate** (Best report in ML and Intelligent Data Processing section): [Certificate](https://mathematiclove.github.io/my-cv/certificates/spbstu-science-week.jpg)
+- **Diploma for 1st degree laureate** (Best report in ML and Intelligent Data Processing section): [First Place Certificate](https://mathematiclove.github.io/my-cv/certificates/spbstu-science-week.jpg)
 - **Full Thesis (only for SPbSTU users)**: https://elib.spbstu.ru/dl/3/2026/vr/vr26-1780.pdf/info
 
 ---
